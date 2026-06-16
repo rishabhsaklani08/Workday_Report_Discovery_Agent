@@ -132,6 +132,27 @@ The `.env` file controls core behavior:
 
 ---
 
+## Deployment on Vercel
+
+This project includes a [vercel.json](file:///c:/Users/rishabh.saklani/OneDrive%20-%20Accenture/Desktop/Report_Ranking_Agent/Report_Ranking_Agent/vercel.json) configuration file that handles:
+- Routing `/api/*` endpoints to the FastAPI application.
+- Natively serving static files under `/static` directly via Vercel's global CDN for maximum speed.
+
+### Steps to Deploy:
+1. Push the repository to GitHub.
+2. In Vercel, select **Import Project** and choose this repository.
+3. Keep the **Build and Output Settings** at their **defaults** (do not override them, as `vercel.json` configures everything automatically).
+4. Add the required **Environment Variables** in the Vercel dashboard:
+   - `OPENAI_API_KEY`: `<Your Groq/OpenAI API Key>`
+   - `OPENAI_BASE_URL`: `https://api.groq.com/openai/v1`
+   - `MODEL_NAME`: `meta-llama/llama-4-scout-17b-16e-instruct`
+   - `WORKDAY_RAAS_URL`: `<Your Workday RaaS URL>`
+   - `WORKDAY_ISU_USERNAME`: `<ISU Username>`
+   - `WORKDAY_ISU_PASSWORD`: `<ISU Password>`
+5. Click **Deploy**.
+
+---
+
 ## License
 
 Internal use only. Not for redistribution.
