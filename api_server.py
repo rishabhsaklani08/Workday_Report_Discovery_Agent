@@ -89,7 +89,9 @@ def get_stats():
     }
 
 # Mount static files at the root
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+import os
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
