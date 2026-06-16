@@ -63,12 +63,17 @@ def sync_from_workday(target_path: str = None) -> bool:
             logger.error("Failed to parse response as JSON: %s", e)
             return False
 
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-
-        # Write data to destination file
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=3, ensure_ascii=False)
+        # Ensure directory exists and handle read-only filesystems (e.g., Vercel)
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=3, ensure_ascii=False)
+        except OSError:
+            logger.warning("Filesystem is read-only. Falling back to /tmp/workday_catalog.json")
+            output_path = "/tmp/workday_catalog.json"
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=3, ensure_ascii=False)
+            config.DEFAULT_CATALOG_PATH = output_path
 
         # Confirm length of reports
         num_reports = 0
