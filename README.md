@@ -1,9 +1,7 @@
-# Report Ranking Agent
-## BM25 → LLM Scorer for Workday Legacy Report Discovery
+# Workday Report Discovery Agent
+## BM25 + LLM Semantic Search for Legacy Reports
 
-A two-stage report discovery agent that helps users find the most relevant
-legacy reports from a catalog of ~10,000 Workday reports using natural
-language queries.
+A two-stage report discovery agent that helps users find the most relevant legacy reports from a catalog of ~11,000+ Workday reports using natural language queries.
 
 ---
 
@@ -12,24 +10,21 @@ language queries.
 ```
                           ONLINE QUERY PATH
 ┌──────────────┐    ┌──────────────────┐    ┌────────────────┐
-│  User Query   │───>│ Query Preprocess  │───>│  BM25 Search   │
-│  (natural     │    │ • Tokenize        │    │  • Full catalog │
-│   language)   │    │ • Stem            │    │  • Field boosts │
-└──────────────┘    │ • Expand synonyms │    │  • Top-N cands  │
-                    └──────────────────┘    └───────┬────────┘
+│  User Query  │───>│ Query Preprocess │───>│  BM25 Search   │
+│  (natural    │    │ • Tokenize       │    │ • Full catalog │
+│   language)  │    │ • Stem & Synonyms│    │ • Top-50 cands │
+└──────────────┘    └──────────────────┘    └───────┬────────┘
                                                     │
                                                     ▼
                     ┌──────────────────┐    ┌────────────────┐
-                    │  Final Response   │<───│  LLM Scorer    │
-                    │ • Ranked reports  │    │  • Score 0-100  │
-                    │ • Relevance band  │    │  • Band H/M/L   │
-                    │ • Explanation     │    │  • Explanation   │
+                    │  Final Response  │<───│  LLM Scorer    │
+                    │ • Ranked reports │    │ • Groq LLaMA   │
+                    │ • Explanations   │    │ • Score 0-100  │
                     └──────────────────┘    └────────────────┘
 
                         OFFLINE PREPARATION
 ┌──────────────────────────────────────────────────────────┐
-│  Report Catalog  →  Composite Text  →  BM25 Index        │
-│  (JSON from Workday RaaS API export)                      │
+│  Workday RaaS  →  JSON Catalog  →  Composite BM25 Index  │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -42,21 +37,33 @@ Report_Ranking_Agent/
 ├── README.md               ← You are here
 ├── requirements.txt        ← Python dependencies
 ├── .env.example            ← Environment variable template
-├── config.py               ← Configuration and defaults
-├── stemmer.py              ← Suffix-stripping stemmer
-├── synonyms.py             ← HR/Workday synonym dictionary
-├── bm25_engine.py          ← BM25 search engine (from scratch)
-├── llm_scorer.py           ← LLM-based candidate re-ranker
-├── report_catalog.py       ← Report metadata loader + quality checks
+├── config.py               ← Configuration and thresholds
+├── api_server.py           ← FastAPI backend server
 ├── agent.py                ← Main orchestrator (the Agent)
-├── app.py                  ← Streamlit web UI
-├── cli.py                  ← Rich CLI interface
-├── evaluation.py           ← Evaluation harness with test cases
-├── data/
-│   └── sample_reports.json ← Sample Workday report metadata
-└── prompts/
-    └── scoring_prompt.txt  ← LLM scoring prompt template
+├── bm25_engine.py          ← Keyword search engine (from scratch)
+├── llm_scorer.py           ← LLM candidate re-ranker (Groq API)
+├── report_catalog.py       ← Data loading & validation
+├── stemmer.py              ← Custom suffix-stripping & tokenization
+├── synonyms.py             ← Workday & HR synonym dictionaries
+├── sync_catalog.py         ← Workday RaaS syncing logic
+├── cli.py                  ← Command-line interface
+├── evaluation.py           ← Automated accuracy evaluations
+├── data/                   ← Stored JSON catalogs
+├── prompts/                ← LLM instructions (scoring_prompt.txt)
+└── static/                 ← Frontend Vanilla HTML/JS UI
+    ├── index.html
+    ├── styles.css
+    └── app.js
 ```
+
+---
+
+## Tech Stack
+
+- **Frontend**: Vanilla HTML5, CSS3 (Custom Dark Mode UI), JavaScript (ES6+)
+- **Backend**: Python 3.10+, FastAPI, Uvicorn
+- **Search Engine**: Custom Python BM25 Implementation
+- **LLM Provider**: Groq API (Meta LLaMA models)
 
 ---
 
@@ -70,13 +77,16 @@ pip install -r requirements.txt
 ### 2. Configure environment
 ```bash
 cp .env.example .env
-# Edit .env and add your OpenAI API key
 ```
+Edit `.env` and add your:
+- Groq/OpenAI API key
+- Workday RaaS URL and ISU Credentials
 
-### 3. Run the Streamlit app
+### 3. Run the Web Application
 ```bash
-streamlit run app.py
+python api_server.py
 ```
+Open your browser to `http://localhost:8000`.
 
 ### 4. Or use the CLI
 ```bash
@@ -87,7 +97,7 @@ python cli.py
 ```python
 from agent import ReportDiscoveryAgent
 
-agent = ReportDiscoveryAgent("data/sample_reports.json")
+agent = ReportDiscoveryAgent()
 results = agent.search("I want a report that gives pre-hire details")
 for r in results:
     print(f"[{r['band']}] {r['report_name']} — {r['score']}/100")
@@ -96,68 +106,29 @@ for r in results:
 
 ---
 
-## Running the Evaluation Harness
-```bash
-python evaluation.py
-```
-This runs 20 predefined test queries across 4 scenarios and prints
-Hit@1, Hit@3, MRR metrics with a comparison table.
-
----
-
 ## Configuration
+
+The `.env` file controls core behavior:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | — | Your OpenAI API key |
-| `MODEL_NAME` | `gpt-4o` | LLM model for scoring |
-| `BM25_TOP_N` | `30` | Candidates passed from BM25 to LLM |
-| `LLM_TOP_K` | `5` | Final results returned to user |
-| `NAME_BOOST` | `3` | Weight multiplier for report name |
-| `DESC_BOOST` | `2` | Weight multiplier for description |
-| `DS_DESC_BOOST` | `1.5` | Weight for data source description |
-| `FIELD_BOOST` | `1` | Weight for field names |
+| `OPENAI_API_KEY` | — | Your Groq API key |
+| `OPENAI_BASE_URL`| `https://api.groq.com/openai/v1` | Groq API URL |
+| `MODEL_NAME` | `meta-llama/llama-4-scout-17b-16e-instruct` | LLM for scoring |
+| `BM25_TOP_N` | `30` | Fallback candidates passed to LLM |
+| `WORKDAY_RAAS_URL` | — | URL to JSON Workday Report export |
+| `WORKDAY_ISU_USERNAME`| — | Integration System User name |
+
+*Note: You can tweak scoring boosts in `config.py`.*
 
 ---
 
-## Extending the Synonym Dictionary
+## Key Features & Fixes Included
 
-Edit `synonyms.py` and add new groups to `SYNONYM_GROUPS`:
-
-```python
-SYNONYM_GROUPS.append(
-    {"new_term", "existing_synonym_stem", "another_stem"}
-)
-```
-
-All terms should be in their **stemmed** form (run `stemmer.stem("word")`
-to check).
-
----
-
-## Known Limitations
-
-1. **Reports without metadata** (no description/fields) will rank poorly.
-   Ensure the Workday RaaS export captures all available metadata.
-2. **Synonym coverage** is finite. Expand the dictionary as you discover
-   new user vocabulary patterns.
-3. **BM25 cannot bridge pure paraphrase gaps** (e.g., "workforce expansion"
-   vs "hires"). Synonyms mitigate this but don't eliminate it.
-4. **LLM scoring adds latency** (~2-5 seconds) and cost (~$0.01-0.03/query).
-5. **Numeric scores are relevance indicators**, not exact match percentages.
-
----
-
-## Validated Performance (Sample Dataset)
-
-| Stage | Hit@1 | Hit@3 | MRR |
-|---|---|---|---|
-| Baseline (names only) | 50% | 75% | 0.668 |
-| +Stemming +Synonyms | 80% | 95% | 0.873 |
-| +Full Metadata | 75% | 90% | 0.848 |
-| +LLM Re-ranking | 80% | 90% | 0.864 |
-
-> Missing metadata is the #1 factor limiting accuracy.
+1. **Semantic Scoring with Strict Guardrails**: The LLM evaluates missing fields and descriptions and explicitly penalizes empty reports (capping at score 40) preventing false-positive rankings.
+2. **HR Synonym Engine**: Built-in synonym handling for leave/absence, payroll, pre-hire, compliance, diversity, benefits, and contingent worker terminology.
+3. **Hyphenated Tokenization**: Smart handling of HR terms like "Pre-Hire" vs "Pre Hire" so they map to the same token.
+4. **Live Workday Sync**: Pull down the latest catalog from the Workday RaaS API instantly via the web UI.
 
 ---
 
